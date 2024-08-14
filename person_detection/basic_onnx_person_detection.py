@@ -41,7 +41,7 @@ def getGiColor(grayscale_image):
 def parseRows(rows, shape):
     _, confs, boxes = list(),list(),list()
     image_height, image_width, _ = shape
-    x_factor = image_width / INPUT_WIDTH
+    x_factor = image_width / INPUT_WIDTHg
     y_factor = image_height / INPUT_HEIGHT
     for i in range(rows):
         row = preds[0][i]
@@ -68,7 +68,7 @@ onnxpath = "runs/pose/train7/weights/best.onnx"
 pose_onnx = "yolov8n-pose.onnx"
 example_file_path = "/Volumes/trainingdata/edited/koshi guruma/13.mp4"
 first_frame_path = Path("first_frame.jpg")
-net = cv2.dnn.readNetFromONNX(onnxpath)
+net = cv2.dnn.readNetFromONNX(pose_onnx)
 posemodel = YOLO("yolov8n-pose.pt")
 
 class GI_COLOR(Enum):

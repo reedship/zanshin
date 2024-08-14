@@ -1,74 +1,67 @@
 import cv2
 import numpy as np
-import onnxruntime as ort
-from pprint import pprint
-from torchvision.ops import nms
+from pathlib import Path
+from ultralytics import YOLO
+from ultralytics.utils.plotting import Annotator
+from enum import Enum
 
-# Load the ONNX model
-model_path = 'runs/pose/train7/weights/best.onnx'  # Replace with your model path
-session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+class GI_COLOR(Enum):
+    WHITE = 1
+    BLUE = 2
+    UNKNOWN = 3
 
-# Open a video capture stream (0 for the default webcam)
-cap = cv2.VideoCapture('/Volumes/trainingdata/master_video_copies/3261.mp4')
+def debugShowRectangle(image, box):
+    left, top, right, bottom  = box
+    cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 3)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
+def getCroppedPlayerArea(image, player):
+    return image[player[1]:+player[3], player[0]:player[2]]
+
+def getGiColor(grayscale_image):
+    print("values >= 127: ")
+    print(np.sum(grayscale >= 127))
+    print("values <= 127: ")
+    print(np.sum(grayscale <= 127))
+    print("total values: ")
+    print(np.sum(grayscale))
+    return GI_COLOR.WHITE if (np.sum(grayscale >= 127) > np.sum(grayscale <= 127)) else GI_COLOR.BLUE
+
+model = YOLO('yolov8n-pose.pt')
+example_file_path = "/Volumes/trainingdata/edited/koshi guruma/13.mp4"
+
+cap = cv2.VideoCapture(example_file_path)
+
+while cap.isOpened():
+    success, frame = cap.read()
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
+    if success:
+        results = model(frame)
 
-    # Preprocess the image (resize, normalize, etc.)
-    input_img = cv2.resize(frame, (640, 640))
-    input_img = input_img.astype(np.float32) / 255.0  # Normalize to [0, 1]
-    input_img = np.transpose(input_img, (2, 0, 1))    # Change to CHW
-    input_img = np.expand_dims(input_img, axis=0)     # Add batch dimension
+        for result in results:
+            annotator = Annotator(frame)
+            for box in result.boxes:
 
-    # Run the model
-    outputs = session.run(None, {'images': input_img})
+                converted_coords = list(map(int,box.xyxy[0]))
+                debugShowRectangle(frame, converted_coords)
+                player_area = getCroppedPlayerArea(frame, converted_coords)
+                grayscale = cv2.cvtColor(player_area, cv2.COLOR_BGR2GRAY)
+                gi_color = getGiColor(grayscale)
+                print(gi_color.value)
+                annotator.box_label(box.xyxy[0], f"{gi_color}")
 
 
-    # Extract bounding boxes and scores from the outputs
-    boxes = outputs[0]
+        annotated_frame = annotator.result()
+        cv2.imshow("Interference", annotated_frame)
 
-    # Filter detections with a confidence threshold
-    threshold = 0.5
-    filtered_boxes = []
-    for detection in boxes[0]:  # Modify this loop based on your output structure
-
-        box, score = detection[:4], detection[4]  # Modify indices as necessary
-        pprint(box, score)
-        if score > threshold:
-            filtered_boxes.append(box)
-
-    h, w, _ = frame.shape
-#    print(h,w)
-    # Draw bounding boxes on the frame
-    for box in filtered_boxes[:2]:  # Only draw the first two detections
-        x1, y1, x2, y2 = box
-        x1 = int(x1 * w)  # Scale x1 from [0, 1] to [0, frame_width]
-        y1 = int(y1 * h)  # Scale y1 from [0, 1] to [0, frame_height]
-        x2 = int(x2 * w)  # Scale x2 from [0, 1] to [0, frame_width]
-        y2 = int(y2 * h)  # Scale y2 from [0, 1] to [0, frame_height]
-
-        # Check if coordinates are within frame bounds
-        h, w, _ = frame.shape
-        x1 = max(0, min(x1, w - 1))
-        y1 = max(0, min(y1, h - 1))
-        x2 = max(0, min(x2, w - 1))
-        y2 = max(0, min(y2, h - 1))
-
-        # Print and draw the rectangle
- #       print(f"Drawing box: ({x1}, {y1}), ({x2}, {y2})")
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        # Define a function for non-maximum suppression
-
-    # Display the frame
-    cv2.imshow('YOLOv8 Pose Detection', frame)
-
-    # Break the loop on 'q' key press
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Release the capture and close the windows
 cap.release()
 cv2.destroyAllWindows()
+
+"""
+Some notes about this one:
+The order that the model returns boxes at is different than before somehow? Double check that.
+Also it looks like the way we are determining what gi color is doing what is just plain wrong. It works fine when people aren't overlapping, but it marks everyone as blue once the blue person is in front.
+this would also be the same for whenever we have a white gi in front.
+
+need to find a better way.
+"""
